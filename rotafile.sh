@@ -4,7 +4,7 @@
 # This script allows deleting files based on specified time periods
 
 # Usage:
-# ./rotafile.sh [directory] [time_period] [file_pattern] [--force]
+# ./rotafile.sh [directory] [time_period] [file_pattern] [options]
 #
 # [directory]    - The directory to search for files to delete
 # [time_period]  - Time period with unit (e.g., 5d, 2w, 3m, 1y)
@@ -129,15 +129,74 @@ echo "===================================="
 
 # Find and list files older than the specified time period
 echo "The following files will be deleted:"
-FILES_TO_DELETE=$(find "$DIRECTORY" -type f -name "$FILE_PATTERN" -mtime +$DAYS -print)
-echo "$FILES_TO_DELETE"
+echo "------------------------------------"
+echo "TIMESTAMP               SIZE    FILE"
+echo "------------------------------------"
 
-# Count number of files to delete
-FILE_COUNT=$(echo "$FILES_TO_DELETE" | grep -v "^$" | wc -l)
+# Create a temporary file to store file info with sortable dates
+TEMP_FILE="/tmp/rotafile_list.$$"
+touch "$TEMP_FILE"
+
+# Function to convert file size to human-readable format
+human_readable_size() {
+    local size=$1
+    local suffix=("B" "K" "M" "G" "T")
+    local scale=0
+    
+    while (( size > 1024 )); do
+        # Integer division with bash
+        size=$((size / 1024))
+        scale=$((scale + 1))
+    done
+    
+    echo "${size}${suffix[$scale]}"
+}
+
+# Find all matching files and get their information
+find "$DIRECTORY" -type f -name "$FILE_PATTERN" -mtime +$DAYS -print | while read FILE; do
+    if [ -f "$FILE" ]; then
+        # Get epoch time for sorting
+        EPOCH=$(stat -c %Y "$FILE")
+        
+        # Get file size
+        SIZE=$(stat -c %s "$FILE")
+        SIZE_HR=$(human_readable_size "$SIZE")
+        
+        # Get human-readable date in format we want to display
+        DATE_DISPLAY=$(date -r "$FILE" "+%b %d %Y")
+        
+        # Store with epoch first for sorting
+        echo "$EPOCH $DATE_DISPLAY $SIZE_HR $FILE" >> "$TEMP_FILE"
+    fi
+done
+
+# Sort by timestamp (epoch) and display
+if [ -s "$TEMP_FILE" ]; then
+    sort -n "$TEMP_FILE" | while read -r LINE; do
+        # Extract the sorted information (skip epoch, which was just for sorting)
+        TIMESTAMP=$(echo "$LINE" | awk '{print $2, $3, $4}')
+        SIZE=$(echo "$LINE" | awk '{print $5}')
+        FILE=$(echo "$LINE" | cut -d' ' -f6-)
+        
+        # Print in formatted table
+        printf "%-20s %-7s %s\n" "$TIMESTAMP" "$SIZE" "$FILE"
+    done
+    
+    # Count the files
+    FILE_COUNT=$(wc -l < "$TEMP_FILE")
+else
+    FILE_COUNT=0
+    echo "No matching files found."
+fi
+
+# Clean up temporary file
+rm -f "$TEMP_FILE"
+
+echo "------------------------------------"
 echo "Total files to delete: $FILE_COUNT"
 
 # Ask for confirmation if not in force mode and not in dry run mode
-if [ $FORCE_MODE -eq 0 ] && [ $DRY_RUN -eq 0 ]; then
+if [ $FORCE_MODE -eq 0 ] && [ $DRY_RUN -eq 0 ] && [ $FILE_COUNT -gt 0 ]; then
     read -p "Do you want to proceed with deletion? (y/n): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
         echo "Operation cancelled."
