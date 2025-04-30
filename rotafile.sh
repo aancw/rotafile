@@ -28,6 +28,7 @@ show_usage() {
     echo "Options:"
     echo "  --force        - Skip confirmation prompt (useful for cron jobs)"
     echo "  --dry-run      - Show what would be deleted without actually deleting"
+    echo "  --log=FILE     - Write output to a log file in addition to screen"
     echo "  --help         - Display this help message"
 }
 
@@ -37,6 +38,7 @@ DRY_RUN=0
 DIRECTORY=""
 TIME_PERIOD=""
 FILE_PATTERN=""
+LOG_FILE=""
 
 # Process arguments
 while [[ $# -gt 0 ]]; do
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=1
+            shift
+            ;;
+        --log=*)
+            LOG_FILE="${1#*=}"
             shift
             ;;
         --help)
@@ -118,20 +124,52 @@ case "$TIME_UNIT" in
         ;;
 esac
 
+# Set up logging function
+log_message() {
+    local message="$1"
+    echo "$message"
+    
+    if [ -n "$LOG_FILE" ]; then
+        echo "$message" >> "$LOG_FILE"
+    fi
+}
+
+# Initialize log file if specified
+if [ -n "$LOG_FILE" ]; then
+    # Create log directory if it doesn't exist
+    LOG_DIR=$(dirname "$LOG_FILE")
+    if [ ! -d "$LOG_DIR" ] && [ "$LOG_DIR" != "." ]; then
+        mkdir -p "$LOG_DIR" 2>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "Error: Could not create log directory: $LOG_DIR"
+            exit 1
+        fi
+    fi
+    
+    # Create or truncate the log file
+    echo "Rotafile Log - $(date)" > "$LOG_FILE"
+    echo "Command: $0 $DIRECTORY $TIME_PERIOD $FILE_PATTERN" >> "$LOG_FILE"
+    echo "Started at: $(date)" >> "$LOG_FILE"
+    echo "----------------------------------------" >> "$LOG_FILE"
+fi
+
 # Display summary of operations
-echo "========== Rotafile Summary =========="
-echo "Directory: $DIRECTORY"
-echo "Time Period: $TIME_VALUE $TIME_UNIT_FULL ($DAYS days)"
-echo "File Pattern: $FILE_PATTERN"
-echo "Force Mode: $([ $FORCE_MODE -eq 1 ] && echo "Enabled" || echo "Disabled")"
-echo "Dry Run: $([ $DRY_RUN -eq 1 ] && echo "Enabled" || echo "Disabled")"
-echo "===================================="
+log_message "========== Rotafile Summary =========="
+log_message "Directory: $DIRECTORY"
+log_message "Time Period: $TIME_VALUE $TIME_UNIT_FULL ($DAYS days)"
+log_message "File Pattern: $FILE_PATTERN"
+log_message "Force Mode: $([ $FORCE_MODE -eq 1 ] && echo "Enabled" || echo "Disabled")"
+log_message "Dry Run: $([ $DRY_RUN -eq 1 ] && echo "Enabled" || echo "Disabled")"
+if [ -n "$LOG_FILE" ]; then
+    log_message "Logging to: $LOG_FILE"
+fi
+log_message "===================================="
 
 # Find and list files older than the specified time period
-echo "The following files will be deleted:"
-echo "------------------------------------"
-echo "TIMESTAMP               SIZE    FILE"
-echo "------------------------------------"
+log_message "The following files will be deleted:"
+log_message "------------------------------------"
+log_message "TIMESTAMP            SIZE    FILE   "
+log_message "------------------------------------"
 
 # Create a temporary file to store file info with sortable dates
 TEMP_FILE="/tmp/rotafile_list.$$"
@@ -179,37 +217,52 @@ if [ -s "$TEMP_FILE" ]; then
         FILE=$(echo "$LINE" | cut -d' ' -f6-)
         
         # Print in formatted table
-        printf "%-20s %-7s %s\n" "$TIMESTAMP" "$SIZE" "$FILE"
+        output=$(printf "%-20s %-7s %s\n" "$TIMESTAMP" "$SIZE" "$FILE")
+        log_message "$output"
     done
     
     # Count the files
     FILE_COUNT=$(wc -l < "$TEMP_FILE")
 else
     FILE_COUNT=0
-    echo "No matching files found."
+    log_message "No matching files found."
 fi
 
 # Clean up temporary file
 rm -f "$TEMP_FILE"
 
-echo "------------------------------------"
-echo "Total files to delete: $FILE_COUNT"
+log_message "------------------------------------"
+log_message "Total files to delete: $FILE_COUNT"
 
 # Ask for confirmation if not in force mode and not in dry run mode
 if [ $FORCE_MODE -eq 0 ] && [ $DRY_RUN -eq 0 ] && [ $FILE_COUNT -gt 0 ]; then
     read -p "Do you want to proceed with deletion? (y/n): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Operation cancelled."
+        log_message "Operation cancelled."
+        
+        # Add final timestamp to log if logging enabled
+        if [ -n "$LOG_FILE" ]; then
+            echo "----------------------------------------" >> "$LOG_FILE"
+            echo "Cancelled at: $(date)" >> "$LOG_FILE"
+        fi
+        
         exit 0
     fi
 fi
 
 # Execute deletion unless in dry run mode
 if [ $DRY_RUN -eq 1 ]; then
-    echo "DRY RUN: No files were deleted."
+    log_message "DRY RUN: No files were deleted."
 elif [ $FILE_COUNT -gt 0 ]; then
     find "$DIRECTORY" -type f -name "$FILE_PATTERN" -mtime +$DAYS -delete
-    echo "Files rotated successfully."
+    log_message "Files rotated successfully."
 else
-    echo "No files to rotate."
+    log_message "No files to rotate."
+fi
+
+# Add final timestamp to log if logging enabled
+if [ -n "$LOG_FILE" ]; then
+    echo "----------------------------------------" >> "$LOG_FILE"
+    echo "Completed at: $(date)" >> "$LOG_FILE"
+    echo "Result: $([ $DRY_RUN -eq 1 ] && echo "Dry run, no files deleted" || ([ $FILE_COUNT -gt 0 ] && echo "$FILE_COUNT files rotated" || echo "No files rotated"))" >> "$LOG_FILE"
 fi

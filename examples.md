@@ -11,18 +11,18 @@ This document provides detailed examples of how to use Rotafile for various scen
 ./rotafile.sh . 7d
 ```
 
-### See what would be deleted without actually deleting
-
-```bash
-# Preview files that would be deleted without actually deleting them
-./rotafile.sh /var/log 2w "*.log" --dry-run
-```
-
 ### Delete log files older than 2 weeks
 
 ```bash
 # Delete only .log files older than 2 weeks in /var/log
 ./rotafile.sh /var/log 2w "*.log"
+```
+
+### Logging operations to a file
+
+```bash
+# Log all operations to a file for record keeping
+./rotafile.sh /var/log 30d "*.log" --log=/var/log/rotafile/cleanup.log
 ```
 
 ### Delete backup files older than 3 months
@@ -51,11 +51,11 @@ find /var/log -type f \( -name "*.log" -o -name "*.tmp" \) -mtime +5 -delete
 
 Note: For multiple patterns, you might need to use `find` directly as shown above, or run rotafile.sh multiple times.
 
-### Using with sudo
+### Combining multiple options
 
 ```bash
-# Delete system logs older than 30 days (requires permissions)
-sudo ./rotafile.sh /var/log 30d "*.log"
+# Dry run with logging for backup files, perfect for testing
+./rotafile.sh /backup 3m "backup*.tar.gz" --dry-run --log=/var/log/rotafile-test.log
 ```
 
 ### Delete empty directories after file deletion

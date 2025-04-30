@@ -66,6 +66,7 @@ Basic syntax:
 
 - `--force`: Skip confirmation prompt (useful for cron jobs)
 - `--dry-run`: Show what would be deleted without actually deleting anything
+- `--log=FILE`: Write output to a log file (in addition to stdout)
 - `--help`: Display usage information
 
 ### Examples
@@ -80,9 +81,9 @@ Delete log files older than 2 weeks in /var/log:
 ./rotafile.sh /var/log 2w "*.log"
 ```
 
-Do a dry run to see what would be deleted without actually deleting:
+Do a dry run and save the results to a log file:
 ```bash
-./rotafile.sh /backup 3m "backup-*.tar.gz" --dry-run
+./rotafile.sh /backup 3m "backup-*.tar.gz" --dry-run --log=/var/log/rotafile.log
 ```
 
 Delete backup files older than 3 months without confirmation:
